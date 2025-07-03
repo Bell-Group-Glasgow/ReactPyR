@@ -11,7 +11,7 @@ This work is licensed under a
 
 # ReactPyR
 
-ReactPyR was developed for use with Mettler's iCIR software via their proprietary OPC-UA software. Node IDs were obtained from Mettlers OPCUA software. 
+ReactPyR was developed for use with Mettler's iCIR software. Node IDs were obtained from Mettlers OPCUA software. 
 
 This project was developed and tested using Windows 10 and on a ReactIR15 system and is written in Python3 using freeopcua (https://github.com/freeopcua). 
 
