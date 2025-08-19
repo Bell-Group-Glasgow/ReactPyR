@@ -1,6 +1,5 @@
 """The module focuses on controlling an IR machine via its OPC UA server."""
 
-import os
 import asyncio
 from asyncio import Queue
 from asyncua import Client
@@ -34,29 +33,25 @@ class ReactPyR():
 
         # Time in seconds between IR sample collections.
         self.sampling_interval = None
+        
+        # # Loading the wavenumbers ic IR spits out (OPC server only gives a list of intensities).
+        # file_path = os.path.dirname(os.path.realpath(__file__))
+        # csv_path = os.path.join(file_path, 'wavelengths.csv')
 
-        # Loading the wavenumbers ic IR spits out (OPC server only gives a list of intensities).
-        file_path = os.path.dirname(os.path.realpath(__file__))
-        csv_path = os.path.join(file_path, 'wavelengths.csv')
+        # # The standard wavenumber (cm^-1) axis usesd by ic IR.
+        # self.wave_numbers = pd.read_csv(csv_path)['Wavenumbercm-1'].tolist()
 
-        # The standard wavenumber (cm^-1) axis usesd by ic IR.
-        self.wave_numbers = pd.read_csv(csv_path)['Wavenumbercm-1'].tolist()
-
-        # Path to methods object node. Used to create function wrappers.
-        self.method_objects_path = "/Objects/2:IrMachine/2:MethodsNode"
-
-        # Method names. Used to call methods on OPC server.
-        self.start_experiment_method_name = "2:Start Experiment"
-        self.resume_experiment_method_name = "2:Resume Experiment"
-        self.pause_experiment_method_name = "2:Pause Experiment"
-        self.stop_experiment_method_name = "2:Stop Experiment"
-        self.set_sampling_interval_method_name = "2:Set Sampling Interval"
-
-        # Variable node ids. Used to read variable values.
-        self.current_sampling_interval_node_id = "ns=2;i=14"
-        self.lask_background_spectra_node_id = "ns=2;i=13"
-        self.treated_spectra_node_id = "ns=2;i=11"
-        self.raw_spectra_node_id = "ns=2;i=12"
+        # Node ids used to call methods and read variable values.
+        self.methods_objects_node_id = 'ns=2;s=Local.iCIR.Probe1.Methods'
+        self.start_experiment_node_id = 'ns=2;s=Local.iCIR.Probe1.Methods.Start Experiment'
+        self.resume_experiment_node_id = 'ns=2;s=Local.iCIR.Probe1.Methods.Resume'
+        self.pause_experiment_node_id = 'ns=2;s=Local.iCIR.Probe1.Methods.Pause'
+        self.stop_experiment_node_id = 'ns=2;s=Local.iCIR.Probe1.Methods.Stop'
+        self.set_sampling_interval_node_id = 'ns=2;s=Local.iCIR.Probe1.Methods.SetSamplingInterval'
+        self.current_sampling_interval_node_id = 'ns=2;s=Local.iCIR.Probe1.CurrentSamplingInterval'
+        self.lask_background_spectra_node_id = 'ns=2;s=Local.iCIR.Probe1.SpectraBackground'
+        self.treated_spectra_node_id = 'ns=2;s=Local.iCIR.Probe1.SpectraTreated'
+        self.raw_spectra_node_id = 'ns=2;s=Local.iCIR.Probe1.SpectraRaw'
 
         # Creating instance of OPC UA client.
         self.client = Client(url=self.opc_server_path)
@@ -91,7 +86,7 @@ class ReactPyR():
 
         # Connecting to client if required
         if not self.connected_client_bool:
-            await self.connect()
+            await self.client.connect()
 
         # Getting variable node
         myvar = self.client.get_node(self.treated_spectra_node_id)
@@ -116,6 +111,16 @@ class ReactPyR():
         await sub.subscribe_data_change(myvar)
         await asyncio.sleep(0.1)
 
+    async def call_method(self, parent_node_id, method_node_id, *method_inputs):
+        """Calls the required method from server."""
+
+        # Method needs to be called from methods object node.
+        method_object_node = self.client.get_node(parent_node_id)
+        method_node_id = self.client.get_node(method_node_id).nodeid
+
+        # Calling method
+        await method_object_node.call_method(method_node_id, *method_inputs)
+
     async def get_current_sampling_interval(self):
         """Returns current sampling interval (seconds) from OPC UA server."""
 
@@ -135,12 +140,9 @@ class ReactPyR():
             await self.client.connect()
 
         if self.experiment_running:
-            # Methods must be called from object nodes
-            method_object = await self.client.nodes.root.get_child(self.method_objects_path)
 
-            # Calling method
-            await method_object.call_method(self.pause_experiment_method_name)
-
+            # Calling method from server
+            await self.call_method(self.methods_objects_node_id, self.pause_experiment_node_id)
             self.experiment_paused = True
 
     async def stop_experiment(self):
@@ -152,11 +154,8 @@ class ReactPyR():
 
         if self.experiment_running:
 
-            # Methods must be called from object nodes
-            method_object = await self.client.nodes.root.get_child(self.method_objects_path)
-
-            # Calling method
-            await method_object.call_method(self.stop_experiment_method_name)
+            # Calling method from server
+            await self.call_method(self.methods_objects_node_id, self.stop_experiment_node_id)
 
             await self.disconnect()
 
@@ -172,12 +171,8 @@ class ReactPyR():
 
         if self.experiment_running and self.experiment_paused:
 
-            # Methods must be called from object nodes
-            method_object = await self.client.nodes.root.get_child(self.method_objects_path)
-
-            # Calling method
-            await method_object.call_method(self.resume_experiment_method_name)
-
+            # Calling method from server
+            await self.call_method(self.methods_objects_node_id, self.resume_experiment_node_id)
             self.experiment_paused = False
 
     async def set_sampling_interval(self, sampling_interval:int):
@@ -194,11 +189,10 @@ class ReactPyR():
         if not self.connected_client_bool:
             await self.client.connect()
 
-        # Methods must be called from object nodes
-        method_object = await self.client.nodes.root.get_child(self.method_objects_path)
-
-        # Calling method
-        await method_object.call_method(self.set_sampling_interval_method_name, sampling_interval)
+        # Calling method from server
+        await self.call_method(self.methods_objects_node_id,
+                               self.set_sampling_interval_node_id,
+                               sampling_interval)
 
     async def start_experiment(self, experiment_name:str,
                                template_name:str, collect_background=False):
@@ -216,14 +210,12 @@ class ReactPyR():
 
         if not self.experiment_running:
 
-            # Methods must be called from object nodes
-            method_object = await self.client.nodes.root.get_child(self.method_objects_path)
-
-            # Calling method
-            await method_object.call_method(self.start_experiment_method_name,
-                                            experiment_name,
-                                            template_name)
-
+            # Calling method from server
+            await self.call_method(self.methods_objects_node_id,
+                                   self.start_experiment_node_id,
+                                   experiment_name,
+                                   template_name,
+                                   collect_background)
             self.experiment_running = True
 
     async def connect(self):
