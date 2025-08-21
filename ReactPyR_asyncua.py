@@ -6,6 +6,17 @@ from asyncio import Queue
 from asyncua import Client
 import pandas as pd
 
+class SubscriptionHandler:
+    """
+    The SubscriptionHandler is used to handle the data that is received for the subscription.
+    """
+
+    def datachange_notification(self, node: Node, val, data):
+        """
+        Callback for asyncua Subscription.
+        This method will be called when the Client received a data change message from the Server.
+        """
+
 class ReactPyR():
     """The icIR machine can only be controlled via its OPC UA server.
     Therefore, this class interfaces with the server to control the icIR machine."""
@@ -57,22 +68,17 @@ class ReactPyR():
         # Creating instance of OPC UA client.
         self.client = Client(url=self.opc_server_path)
 
-    
-    async def datachange_notification(self, node, val, data):
-        """Function handles data inflow from the subscription event. 
-        The name and parameters of this function SHOULD NOT be changed (see asyncua library)."""
+    # async def datachange_notification(self, node, val, data):
+    #     """Function handles data inflow from the subscription event. 
+    #     The name and parameters of this function SHOULD NOT be changed (see asyncua library)."""
 
-        if node.nodeid.to_string() == self.raw_spectra_node_id:
-    
+    #     # Checking if its a raw spectra.
+    #     if node.nodeid.to_string() == self.raw_spectra_node_id:
+    #         await self.raw_spectra_queue.put(val)
 
-
-        # # Checking if its a raw spectra.
-        # if node.nodeid.to_string() == self.raw_spectra_node_id:
-        #     await self.raw_spectra_queue.put(val)
-
-        # # Checking if its a treated spectra.
-        # if node.nodeid.to_string() == self.treated_spectra_node_id:
-        #     self.treated_spectra_queue.put(val)
+    #     # Checking if its a treated spectra.
+    #     if node.nodeid.to_string() == self.treated_spectra_node_id:
+    #         self.treated_spectra_queue.put(val)
 
     async def get_last_background_spectra(self):
         """Gets the last collected background spectra from ic IR."""
@@ -97,7 +103,11 @@ class ReactPyR():
         # Getting variable node
         myvar = self.client.get_node(self.treated_spectra_node_id)
 
-        # subscribing to a variable node
+        # # subscribing to a variable node
+        # sub = await self.client.create_subscription(10, self)
+        # await sub.subscribe_data_change(myvar)
+
+        handler = SubscriptionHandler()
         sub = await self.client.create_subscription(10, self)
         await sub.subscribe_data_change(myvar)
 
@@ -111,8 +121,12 @@ class ReactPyR():
         # Getting variable node
         myvar = self.client.get_node(self.raw_spectra_node_id)
 
-        # subscribing to a variable node
-        sub = await self.client.create_subscription(100, self)
+        # # subscribing to a variable node
+        # sub = await self.client.create_subscription(100, self)
+        # await sub.subscribe_data_change(myvar)
+        
+        handler = SubscriptionHandler()
+        sub = await self.client.create_subscription(10, self)
         await sub.subscribe_data_change(myvar)
 
     async def call_method(self, parent_node_id, method_node_id, *method_inputs):
