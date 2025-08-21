@@ -1,6 +1,7 @@
 """The module focuses on controlling an IR machine via its OPC UA server."""
 
 import asyncio
+import os
 from asyncio import Queue
 from asyncua import Client
 import pandas as pd
@@ -35,11 +36,11 @@ class ReactPyR():
         self.sampling_interval = None
         
         # # Loading the wavenumbers ic IR spits out (OPC server only gives a list of intensities).
-        # file_path = os.path.dirname(os.path.realpath(__file__))
-        # csv_path = os.path.join(file_path, 'wavelengths.csv')
+        file_path = os.path.dirname(os.path.realpath(__file__))
+        csv_path = os.path.join(file_path, 'wavelengths.csv')
 
         # # The standard wavenumber (cm^-1) axis usesd by ic IR.
-        # self.wave_numbers = pd.read_csv(csv_path)['Wavenumbercm-1'].tolist()
+        self.wave_numbers = pd.read_csv(csv_path)['Wavenumbercm-1'].tolist()
 
         # Node ids used to call methods and read variable values.
         self.methods_objects_node_id = 'ns=2;s=Local.iCIR.Probe1.Methods'

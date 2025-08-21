@@ -22,12 +22,12 @@ if __name__ == "__main__":
 
         # Starting an experiment.
         template_name = 'DigitalDiscoveryProject'
-        spectra_path = 'Digital Discovery Project\\test1'
+        spectra_path = 'Digital Discovery Project\\test4'
         await ir_machine.start_experiment(spectra_path, template_name, False)
+        await asyncio.sleep(120)
 
         # Retrieving the intensities of previous background spectra.
         background = await ir_machine.get_last_background_spectra()
-        print(background)
 
         # Collecting all the raw and processed IR spectra.
         await ir_machine.collect_raw_spectra()
