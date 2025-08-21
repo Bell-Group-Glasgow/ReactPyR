@@ -22,29 +22,30 @@ if __name__ == "__main__":
 
         # Starting an experiment.
         template_name = 'DigitalDiscoveryProject'
-        spectra_path = 'Digital Discovery Project\\test4'
+        spectra_path = 'Digital Discovery Project\\asyncua_test6'
         await ir_machine.start_experiment(spectra_path, template_name, False)
-        await asyncio.sleep(120)
 
-        # Retrieving the intensities of previous background spectra.
-        background = await ir_machine.get_last_background_spectra()
+        # # Retrieving the intensities of previous background spectra.
+        # background = await ir_machine.get_last_background_spectra()
 
-        # Collecting all the raw and processed IR spectra.
+        # # Collecting all the raw and processed IR spectra.
         await ir_machine.collect_raw_spectra()
-        await ir_machine.collect_treated_spectra()
+        await asyncio.sleep(30)
 
-        # Changing sampling interval to 20 seconds.
-        new_sampling_interval = 20
-        await ir_machine.set_sampling_interval(new_sampling_interval)
-        current_sampling_interval = await ir_machine.get_current_sampling_interval()
-        if new_sampling_interval == current_sampling_interval:
-            print('Sampling interval changed successfully.')
+        # await ir_machine.collect_treated_spectra()
 
-        # Pausing experiment for 20 seconds then resuming for another 20.
-        await ir_machine.pause_experiment()
-        await asyncio.sleep(20)
-        await ir_machine.resume_experiment()
-        await asyncio.sleep(20)
+        # # Changing sampling interval to 20 seconds.
+        # new_sampling_interval = 20
+        # await ir_machine.set_sampling_interval(new_sampling_interval)
+        # current_sampling_interval = await ir_machine.get_current_sampling_interval()
+        # if new_sampling_interval == current_sampling_interval:
+        #     print('Sampling interval changed successfully.')
+
+        # # Pausing experiment for 20 seconds then resuming for another 20.
+        # await ir_machine.pause_experiment()
+        # await asyncio.sleep(20)
+        # await ir_machine.resume_experiment()
+        # await asyncio.sleep(20)
 
         # Stopping experiment
         await ir_machine.stop_experiment()
