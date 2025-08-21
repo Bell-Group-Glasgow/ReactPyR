@@ -6,6 +6,9 @@ So far, the OPC IR client is capable of:
 - Starting, pausing, resuming, and stopping experiments.
 """
 
+from asyncio import sleep
+
+
 if __name__ == "__main__":
 
     import asyncio
@@ -21,26 +24,37 @@ if __name__ == "__main__":
         ir_machine = ReactPyR(opc_server_path=tcp_path)
 
         # Starting an experiment.
+        spectra_path = 'Digital Discovery Project\\asyncTest10'
         template_name = 'DigitalDiscoveryProject'
-        spectra_path = 'Digital Discovery Project\\test1'
         await ir_machine.start_experiment(spectra_path, template_name, False)
+        await sleep(20)
+        # await ir_machine.pause_experiment()
+        # await ir_machine.get_current_sampling_interval()
+        # await sleep(10)
+        # await ir_machine.set_sampling_interval(60)
+        # await sleep(15)
+        # await ir_machine.resume_experiment()
+        # await ir_machine.get_current_sampling_interval()
+        # await sleep(20)
+        # await ir_machine.stop_experiment()
 
-        # Retrieving the intensities of previous background spectra.
-        background = await ir_machine.get_last_background_spectra()
-        print(background)
+        # # Retrieving the intensities of previous background spectra.
+        # print("Retrieving last background spectra...")
+        # background = await ir_machine.get_last_background_spectra()
+        # print(background)
 
-        # Collecting all the raw and processed IR spectra.
+        # # Collecting all the raw and processed IR spectra.
         await ir_machine.collect_raw_spectra()
         await ir_machine.collect_treated_spectra()
 
-        # Changing sampling interval to 20 seconds.
+        # # Changing sampling interval to 20 seconds.
         new_sampling_interval = 20
         await ir_machine.set_sampling_interval(new_sampling_interval)
         current_sampling_interval = await ir_machine.get_current_sampling_interval()
         if new_sampling_interval == current_sampling_interval:
             print('Sampling interval changed successfully.')
 
-        # Pausing experiment for 20 seconds then resuming for another 20.
+        # # Pausing experiment for 20 seconds then resuming for another 20.
         await ir_machine.pause_experiment()
         await asyncio.sleep(20)
         await ir_machine.resume_experiment()

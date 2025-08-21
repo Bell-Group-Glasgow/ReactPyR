@@ -1,10 +1,11 @@
 """The module focuses on controlling an IR machine via its OPC UA server."""
 
-import os
 import asyncio
+import os
+import pandas as pd
 from asyncio import Queue
 from asyncua import Client
-import pandas as pd
+
 
 class ReactPyR():
     """The icIR machine can only be controlled via its OPC UA server.
@@ -39,27 +40,36 @@ class ReactPyR():
         file_path = os.path.dirname(os.path.realpath(__file__))
         csv_path = os.path.join(file_path, 'wavelengths.csv')
 
-        # The standard wavenumber (cm^-1) axis usesd by ic IR.
+        # # The standard wavenumber (cm^-1) axis usesd by ic IR.
         self.wave_numbers = pd.read_csv(csv_path)['Wavenumbercm-1'].tolist()
 
         # Path to methods object node. Used to create function wrappers.
-        self.method_objects_path = "/Objects/2:IrMachine/2:MethodsNode"
+        self.method_objects_path = "ns=2;s=Local.iCIR.Probe1"
 
-        # Method names. Used to call methods on OPC server.
-        self.start_experiment_method_name = "2:Start Experiment"
-        self.resume_experiment_method_name = "2:Resume Experiment"
-        self.pause_experiment_method_name = "2:Pause Experiment"
-        self.stop_experiment_method_name = "2:Stop Experiment"
-        self.set_sampling_interval_method_name = "2:Set Sampling Interval"
 
-        # Variable node ids. Used to read variable values.
-        self.current_sampling_interval_node_id = "ns=2;i=14"
-        self.lask_background_spectra_node_id = "ns=2;i=13"
-        self.treated_spectra_node_id = "ns=2;i=11"
-        self.raw_spectra_node_id = "ns=2;i=12"
+        # Node ids. Used to read variable values.
+        self.current_sampling_interval_node_id = "ns=2;s=Local.iCIR.Probe1.CurrentSamplingInterval"
+        self.last_background_spectra_node_id = "ns=2;s=Local.iCIR.Probe1.SpectraBackground"
+        self.treated_spectra_node_id = "ns=2;s=Local.iCIR.Probe1.SpectraTreated"
+        self.raw_spectra_node_id = "ns=2;s=Local.iCIR.Probe1.SpectraRaw"
 
         # Creating instance of OPC UA client.
         self.client = Client(url=self.opc_server_path)
+    
+    async def get_methods_node(self):
+        try:
+            start_nodeid = self.client.get_node(self.method_objects_path)
+            target_display_name = "Methods"
+            methods = await start_nodeid.get_children()
+    
+            for method in methods:
+                display_name = await method.read_display_name()
+                if display_name.Text == target_display_name:
+                    return method
+
+        except:
+                print('Failed to get method object node. Check the path.')
+
 
     async def datachange_notification(self, node, val, data):
         """Function handles data inflow from the subscription event. 
@@ -67,22 +77,27 @@ class ReactPyR():
 
         # Checking if its a raw spectra.
         if node.nodeid.to_string() == self.raw_spectra_node_id:
-            self.raw_spectra_queue.put(val)
+            await self.raw_spectra_queue.put(val)
 
         # Checking if its a treated spectra.
         if node.nodeid.to_string() == self.treated_spectra_node_id:
-            self.treated_spectra_queue.put(val)
+            await self.treated_spectra_queue.put(val)
 
     async def get_last_background_spectra(self):
         """Gets the last collected background spectra from ic IR."""
 
         # Connecting to client if required.
         if not self.connected_client_bool:
+            print("Connecting to OPC UA server...")
             await self.client.connect()
 
         # Getting node value (spectra) from client.
-        node = self.client.get_node(self.lask_background_spectra_node_id)
+        print("Trying to get NodeId for last background spectra...")
+        node = self.client.get_node(self.last_background_spectra_node_id)
+        print("Reading value of last background spectra...")
+        print(node)
         self.last_background_spectra = await node.read_value()
+        print("Last background spectra retrieved successfully.")
 
         return self.last_background_spectra
 
@@ -95,9 +110,11 @@ class ReactPyR():
 
         # Getting variable node
         myvar = self.client.get_node(self.treated_spectra_node_id)
+        print(myvar)
 
         # subscribing to a variable node
         sub = await self.client.create_subscription(10, self)
+        print("Subscribing to treated spectra node...")
         await sub.subscribe_data_change(myvar)
         await asyncio.sleep(0.1)
 
@@ -110,9 +127,11 @@ class ReactPyR():
 
         # Getting variable node
         myvar = self.client.get_node(self.raw_spectra_node_id)
+        print(myvar)
 
         # subscribing to a variable node
         sub = await self.client.create_subscription(10, self)
+        print("Subscribing to raw spectra node...")
         await sub.subscribe_data_change(myvar)
         await asyncio.sleep(0.1)
 
@@ -125,6 +144,7 @@ class ReactPyR():
 
         # Getting node value
         opc_value = await self.client.get_node(self.current_sampling_interval_node_id).read_value()
+        print(f"Current sampling interval: {opc_value} seconds")
         return opc_value
 
     async def pause_experiment(self):
@@ -136,10 +156,23 @@ class ReactPyR():
 
         if self.experiment_running:
             # Methods must be called from object nodes
-            method_object = await self.client.nodes.root.get_child(self.method_objects_path)
+            method_object = await self.get_methods_node()
+            
+            # Finding method node by display name.
+            # This is a workaround as all nodes have the same BrowseName but different DisplayNames
+            try:
+                pause_experiment_node = await method_object.get_children()
+                for experiment_node in pause_experiment_node:
+                    disp_name = await experiment_node.read_display_name()
+                    if disp_name.Text == 'Pause':
+                        pause_experiment_output = experiment_node
 
-            # Calling method
-            await method_object.call_method(self.pause_experiment_method_name)
+                # Calling method
+                await method_object.call_method(pause_experiment_output)
+                print("Pausing experiment")
+
+            except Exception as e:
+                print(e)
 
             self.experiment_paused = True
 
@@ -151,12 +184,25 @@ class ReactPyR():
             await self.client.connect()
 
         if self.experiment_running:
-
+             
             # Methods must be called from object nodes
-            method_object = await self.client.nodes.root.get_child(self.method_objects_path)
+            method_object = await self.get_methods_node()
 
-            # Calling method
-            await method_object.call_method(self.stop_experiment_method_name)
+            # Finding method node by display name.
+            # This is a workaround as all nodes have the same BrowseName but different DisplayNames
+            try:
+                stop_experiment_node = await method_object.get_children()
+                for experiment_node in stop_experiment_node:
+                    disp_name = await experiment_node.read_display_name()
+                    if disp_name.Text == 'Stop':
+                        stop_experiment_output = experiment_node
+                
+                # Calling method
+                await method_object.call_method(stop_experiment_output)
+                print("Stopping experiment")
+    
+            except Exception as e:
+                print(e)
 
             await self.disconnect()
 
@@ -173,12 +219,27 @@ class ReactPyR():
         if self.experiment_running and self.experiment_paused:
 
             # Methods must be called from object nodes
-            method_object = await self.client.nodes.root.get_child(self.method_objects_path)
+            method_object = await self.get_methods_node()
 
-            # Calling method
-            await method_object.call_method(self.resume_experiment_method_name)
+            # Finding method node by display name.
+            # This is a workaround as all nodes have the same BrowseName but different DisplayNames
+            try:
+                resume_experiment_node = await method_object.get_children()
+                for experiment_node in resume_experiment_node:
+                    disp_name = await experiment_node.read_display_name()
+                    if disp_name.Text == 'Resume':
+                        resume_experiment_output = experiment_node
+
+                # Calling method
+                await method_object.call_method(resume_experiment_output)
+                print("Resuming experiment")
+
+            except Exception as e:
+                print(e)
 
             self.experiment_paused = False
+        else:
+            print("not paused, cannot resume experiment")
 
     async def set_sampling_interval(self, sampling_interval:int):
         """Changes the spectra sampling interval (seconds) via OPC UA."""
@@ -195,13 +256,27 @@ class ReactPyR():
             await self.client.connect()
 
         # Methods must be called from object nodes
-        method_object = await self.client.nodes.root.get_child(self.method_objects_path)
+            method_object = await self.get_methods_node()
 
-        # Calling method
-        await method_object.call_method(self.set_sampling_interval_method_name, sampling_interval)
+            # Finding method node by display name.
+            # This is a workaround as all nodes have the same BrowseName but different DisplayNames
+            try:
+                set_sampling_interval_node = await method_object.get_children()
+                for sampling_node in set_sampling_interval_node:
+                    disp_name = await sampling_node.read_display_name()
+                    if disp_name.Text == 'Set Sampling Interval':
+                        sampling_interval_node = sampling_node
 
-    async def start_experiment(self, experiment_name:str,
-                               template_name:str, collect_background=False):
+                # Calling method
+                await method_object.call_method(sampling_interval_node, self.sampling_interval)
+                print(f"Sampling interval set to {self.sampling_interval} seconds.")
+
+            except Exception as e:
+                print(e)
+
+        
+
+    async def start_experiment(self, experiment_name:str, template_name:str, collect_background=False):
         """Starts experiment (IR aquisition) on OPC UA server.
         experiment_name: the name of the experiment, accepts path like string.
         template_name: template name stored in 
@@ -212,19 +287,71 @@ class ReactPyR():
 
         # Connecting to client if required
         if not self.connected_client_bool:
+            print("Trying to connect to OPC UA server...")
             await self.client.connect()
 
         if not self.experiment_running:
+            
+            #Methods must be called from object nodes
+            method_object = await self.get_methods_node()
 
-            # Methods must be called from object nodes
-            method_object = await self.client.nodes.root.get_child(self.method_objects_path)
-
-            # Calling method
-            await method_object.call_method(self.start_experiment_method_name,
-                                            experiment_name,
-                                            template_name)
+            # Finding method node by display name.
+            # This is a workaround as all nodes have the same BrowseName but different DisplayNames
+            try:
+                start_experiment_node = await method_object.get_children()
+                for experiment_node in start_experiment_node:
+                    disp_name = await experiment_node.read_display_name()
+                    if disp_name.Text == 'Start Experiment':
+                        Start = experiment_node
+                # Calling method
+                await method_object.call_method(Start,
+                                                experiment_name,
+                                                template_name,
+                                                collect_background
+                                                )
+                print(f"Experiment '{experiment_name}' started with template '{template_name}'.")
+            except Exception as e:
+                print(e)
 
             self.experiment_running = True
+
+    # async def list_display_names_with_same_browse_name(self, endpoint, start_nodeid, target_display_name):
+    #     async with Client(endpoint) as client:
+    #         start_node = client.get_node(start_nodeid)
+
+    #         async def recurse(node, path):
+    #             display_name = await node.read_display_name()
+    #             if display_name.Text == target_display_name:
+    #                 return path + [display_name.Text]
+
+    #             children = await node.get_children()
+    #             for child in children:
+    #                 child_display_name = await child.read_display_name()
+    #                 result = await recurse(child, path + [display_name.Text])
+    #                 if result:
+    #                     return result
+    #             return None
+
+    #         path = await recurse(start_node, [])
+    #         if path:
+    #             print("Path (DisplayNames): " + "/" + "/".join(path))
+    #         else:
+    #             print(f"No node found with DisplayName '{target_display_name}'")
+
+    
+    # async def get_node_by_display_name(client, start_nodeid, target_display_name):
+    #     print(start_nodeid)
+    #     children = await start_nodeid.get_children()
+        
+    #     for child in children:
+    #         display_name = await child.read_display_name()
+    #         print(display_name)
+    #         if display_name.Text == target_display_name:
+    #             return child
+        
+    #     print(f"No node found with DisplayName: {target_display_name}")
+    #     return None
+
 
     async def connect(self):
         """Connects to opc server."""
@@ -232,6 +359,7 @@ class ReactPyR():
             print('Connecting IR')
             await self.client.connect()
             self.connected_client_bool = True
+
 
     async def disconnect(self):
         """Disconnects from opc server."""
