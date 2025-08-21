@@ -37,8 +37,8 @@ class ReactPyR():
         self.sampling_interval = None
         
         # # Loading the wavenumbers ic IR spits out (OPC server only gives a list of intensities).
-        # file_path = os.path.dirname(os.path.realpath(__file__))
-        # csv_path = os.path.join(file_path, 'wavelengths.csv')
+        file_path = os.path.dirname(os.path.realpath(__file__))
+        csv_path = os.path.join(file_path, 'wavelengths.csv')
 
         # # The standard wavenumber (cm^-1) axis usesd by ic IR.
         self.wave_numbers = pd.read_csv(csv_path)['Wavenumbercm-1'].tolist()
@@ -324,43 +324,6 @@ class ReactPyR():
                 print(e)
 
             self.experiment_running = True
-
-    # async def list_display_names_with_same_browse_name(self, endpoint, start_nodeid, target_display_name):
-    #     async with Client(endpoint) as client:
-    #         start_node = client.get_node(start_nodeid)
-
-    #         async def recurse(node, path):
-    #             display_name = await node.read_display_name()
-    #             if display_name.Text == target_display_name:
-    #                 return path + [display_name.Text]
-
-    #             children = await node.get_children()
-    #             for child in children:
-    #                 child_display_name = await child.read_display_name()
-    #                 result = await recurse(child, path + [display_name.Text])
-    #                 if result:
-    #                     return result
-    #             return None
-
-    #         path = await recurse(start_node, [])
-    #         if path:
-    #             print("Path (DisplayNames): " + "/" + "/".join(path))
-    #         else:
-    #             print(f"No node found with DisplayName '{target_display_name}'")
-
-    
-    # async def get_node_by_display_name(client, start_nodeid, target_display_name):
-    #     print(start_nodeid)
-    #     children = await start_nodeid.get_children()
-        
-    #     for child in children:
-    #         display_name = await child.read_display_name()
-    #         print(display_name)
-    #         if display_name.Text == target_display_name:
-    #             return child
-        
-    #     print(f"No node found with DisplayName: {target_display_name}")
-    #     return None
 
 
     async def connect(self):
