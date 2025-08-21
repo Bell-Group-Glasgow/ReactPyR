@@ -3,7 +3,7 @@
 import asyncio
 import os
 from asyncio import Queue
-from asyncua import Client
+from asyncua import Client, ua
 import pandas as pd
 
 class ReactPyR():
@@ -95,7 +95,12 @@ class ReactPyR():
         myvar = self.client.get_node(self.treated_spectra_node_id)
 
         # subscribing to a variable node
-        sub = await self.client.create_subscription(10, self)
+        params = ua.CreateSubscriptionParameters(
+            RequestedPublishingInterval=100,
+            RequestedLifetimeCount=81000,
+            RequestedMaxKeepAliveCount=27000
+        )
+        sub = await self.client.create_subscription(params, self)
         await sub.subscribe_data_change(myvar)
 
     async def collect_raw_spectra(self):
@@ -109,7 +114,12 @@ class ReactPyR():
         myvar = self.client.get_node(self.raw_spectra_node_id)
 
         # subscribing to a variable node
-        sub = await self.client.create_subscription(100, self)
+        params = ua.CreateSubscriptionParameters(
+            RequestedPublishingInterval=100,
+            RequestedLifetimeCount=81000,
+            RequestedMaxKeepAliveCount=27000
+        )
+        sub = await self.client.create_subscription(params, self)
         await sub.subscribe_data_change(myvar)
 
     async def call_method(self, parent_node_id, method_node_id, *method_inputs):
