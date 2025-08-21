@@ -35,10 +35,10 @@ class ReactPyR():
 
         # Time in seconds between IR sample collections.
         self.sampling_interval = None
-
-        # Loading the wavenumbers ic IR spits out (OPC server only gives a list of intensities).
-        file_path = os.path.dirname(os.path.realpath(__file__))
-        csv_path = os.path.join(file_path, 'wavelengths.csv')
+        
+        # # Loading the wavenumbers ic IR spits out (OPC server only gives a list of intensities).
+        # file_path = os.path.dirname(os.path.realpath(__file__))
+        # csv_path = os.path.join(file_path, 'wavelengths.csv')
 
         # # The standard wavenumber (cm^-1) axis usesd by ic IR.
         self.wave_numbers = pd.read_csv(csv_path)['Wavenumbercm-1'].tolist()
@@ -106,7 +106,7 @@ class ReactPyR():
 
         # Connecting to client if required
         if not self.connected_client_bool:
-            await self.connect()
+            await self.client.connect()
 
         # Getting variable node
         myvar = self.client.get_node(self.treated_spectra_node_id)
@@ -134,6 +134,16 @@ class ReactPyR():
         print("Subscribing to raw spectra node...")
         await sub.subscribe_data_change(myvar)
         await asyncio.sleep(0.1)
+
+    async def call_method(self, parent_node_id, method_node_id, *method_inputs):
+        """Calls the required method from server."""
+
+        # Method needs to be called from methods object node.
+        method_object_node = self.client.get_node(parent_node_id)
+        method_node_id = self.client.get_node(method_node_id).nodeid
+
+        # Calling method
+        await method_object_node.call_method(method_node_id, *method_inputs)
 
     async def get_current_sampling_interval(self):
         """Returns current sampling interval (seconds) from OPC UA server."""
