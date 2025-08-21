@@ -63,13 +63,11 @@ class ReactPyR():
 
         # Checking if its a raw spectra.
         if node.nodeid.to_string() == self.raw_spectra_node_id:
-            print('raw')
-            # await self.raw_spectra_queue.put(val)
+            await self.raw_spectra_queue.put(val)
 
         # Checking if its a treated spectra.
         if node.nodeid.to_string() == self.treated_spectra_node_id:
-            print('treated')
-            # self.treated_spectra_queue.put(val)
+            self.treated_spectra_queue.put(val)
 
     async def get_last_background_spectra(self):
         """Gets the last collected background spectra from ic IR."""
