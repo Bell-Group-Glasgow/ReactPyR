@@ -1,217 +1,252 @@
-from opcua import Client
-from threading import Thread
-import pandas as pd
-import os
-import time
-from queue import Queue 
-import pickle
-class ReactPyR():
-    """The icIR machine can only be controlled via its OPC UA server. This class interfaces with the server to control the icIR machine."""
-    
-    def __init__(self, opc_server_path: str=None):        
-        self.opc_server_path = opc_server_path          # TCP path or OPC UA server.
-        self.raw_spectra_queue = Queue()                # Queue for the collected real time raw spectra. The items in the queue are just a list of intensities (their respective wavenumbers can be found in self.wave_numbers).
-        self.treated_spectra_queue = Queue()            # Queue for the collected real time treated spectra. The items in the queue are just a list of intensities (their respective wavenumbers can be found in self.wave_numbers).
-        self.last_background_spectra = None             # Saves the last background taken by OPC UA.
-        self.connected_client_bool = False              # Keeps track if a connection to the OPC UA server has been made.
-        self.experiment_running = False                 # Keeps track if an experiment is running or not.
+"""The module focuses on controlling an IR machine via its OPC UA server."""
 
-        # Loading the wavenumbers ic IR spits out (OPC server only gives a list of intensities).
+import asyncio
+import os
+from asyncio import Queue
+from asyncua import Client, ua
+import pandas as pd
+
+class ReactPyR():
+    """The icIR machine can only be controlled via its OPC UA server.
+    Therefore, this class interfaces with the server to control the icIR machine."""
+
+    def __init__(self, opc_server_path: str=None):
+
+        # TCP path or OPC UA server.
+        self.opc_server_path = opc_server_path
+
+        # Queues for real time raw and treated spectra.
+        # Items in queue are a list of intensities
+        # Respective wavenumbers can be found in self.wave_numbers.
+        self.raw_spectra_queue = Queue()
+        self.treated_spectra_queue = Queue()
+
+        self.last_background_spectra = None
+
+        # Keeps track if a connection to the OPC UA server has been made.
+        self.connected_client_bool = False
+
+        # Keeps track if an experiment is running or not.
+        self.experiment_running = False
+
+        # Keeps track if an experiment is paused or not.
+        self.experiment_paused = False
+
+        # Time in seconds between IR sample collections.
+        self.sampling_interval = None
+        
+        # # Loading the wavenumbers ic IR spits out (OPC server only gives a list of intensities).
         file_path = os.path.dirname(os.path.realpath(__file__))
         csv_path = os.path.join(file_path, 'wavelengths.csv')
-        self.wave_numbers = pd.read_csv(csv_path)['Wavenumbercm-1'].tolist() # The standard wavenumber (cm^-1) axis usesd by ic IR.
 
-        # NodeIds and browse names of relevant nodes in OPC UA Client (these are used to create wrapped python functions).
-        self.methods_object_id = 'ns=2;s=Local.iCIR.Probe1.Methods'                  
-        self.raw_spectra_node_id = 'ns=2;s=Local.iCIR.Probe1.SpectraRaw'
-        self.treated_spectra_node_id = 'ns=2;s=Local.iCIR.Probe1.SpectraTreated'
-        self.lask_background_spectra_node_id = 'ns=2;s=Local.iCIR.Probe1.SpectraBackground'
-        self.current_sampling_interval_node_id = 'ns=2;s=Local.iCIR.Probe1.CurrentSamplingInterval'
-        self.pause_node_id = 'ns=2;s=Local.iCIR.Probe1.Methods.Pause'
-        self.stop_node_id = 'ns=2;s=Local.iCIR.Probe1.Methods.Stop'
-        self.resume_node_id = 'ns=2;s=Local.iCIR.Probe1.Methods.Resume'
-        self.set_sampling_interval_node_id = 'ns=2;s=Local.iCIR.Probe1.Methods.SetSamplingInterval'
+        # # The standard wavenumber (cm^-1) axis usesd by ic IR.
+        self.wave_numbers = pd.read_csv(csv_path)['Wavenumbercm-1'].tolist()
+
+        # Node ids used to call methods and read variable values.
+        self.methods_objects_node_id = 'ns=2;s=Local.iCIR.Probe1.Methods'
         self.start_experiment_node_id = 'ns=2;s=Local.iCIR.Probe1.Methods.Start Experiment'
+        self.resume_experiment_node_id = 'ns=2;s=Local.iCIR.Probe1.Methods.Resume'
+        self.pause_experiment_node_id = 'ns=2;s=Local.iCIR.Probe1.Methods.Pause'
+        self.stop_experiment_node_id = 'ns=2;s=Local.iCIR.Probe1.Methods.Stop'
+        self.set_sampling_interval_node_id = 'ns=2;s=Local.iCIR.Probe1.Methods.SetSamplingInterval'
+        self.current_sampling_interval_node_id = 'ns=2;s=Local.iCIR.Probe1.CurrentSamplingInterval'
+        self.lask_background_spectra_node_id = 'ns=2;s=Local.iCIR.Probe1.SpectraBackground'
+        self.treated_spectra_node_id = 'ns=2;s=Local.iCIR.Probe1.SpectraTreated'
+        self.raw_spectra_node_id = 'ns=2;s=Local.iCIR.Probe1.SpectraRaw'
 
         # Creating instance of OPC UA client.
-        self.client = Client(self.opc_server_path)
+        self.client = Client(url=self.opc_server_path)
 
-    def datachange_notification(self, node, val, data):
-        """Function handles data inflow from the subscription event to OPC server. The name of this function SHOULD not be changed."""
-
-        nodeId = node.nodeid.to_string()
+    async def datachange_notification(self, node, val, data):
+        """Function handles data inflow from the subscription event. 
+        The name and parameters of this function SHOULD NOT be changed (see asyncua library)."""
 
         # Checking if its a raw spectra.
-        if nodeId == self.raw_spectra_node_id:
-            self.raw_spectra_queue.put(val)
+        if node.nodeid.to_string() == self.raw_spectra_node_id:
+            await self.raw_spectra_queue.put(val)
 
         # Checking if its a treated spectra.
-        if nodeId == self.treated_spectra_node_id:
+        if node.nodeid.to_string() == self.treated_spectra_node_id:
             self.treated_spectra_queue.put(val)
 
-    def get_last_background_spectra(self):
+    async def get_last_background_spectra(self):
         """Gets the last collected background spectra from ic IR."""
-        
+
         # Connecting to client if required.
         if not self.connected_client_bool:
-            self.connect()
+            await self.client.connect()
 
-        # Connecting to client and getting node value (spectra).
-        self.last_background_spectra = self.client.get_node(self.lask_background_spectra_node_id).get_value()
-        
+        # Getting node value (spectra) from client.
+        node = self.client.get_node(self.lask_background_spectra_node_id)
+        self.last_background_spectra = await node.read_value()
+
         return self.last_background_spectra
 
-    def collect_treated_spectra(self):
-        """Collecting treated IR spectra from OPC UA server. This creates a client subscription to the treated spectra node, updating treated_spectra_queue with real time spectra"""
+    async def collect_treated_spectra(self):
+        """Collecting real time treated IR spectra from OPC UA server via a client subscription."""
 
         # Connecting to client if required
         if not self.connected_client_bool:
-            self.connect()
+            await self.client.connect()
 
-        spectra = self.client.get_node(self.treated_spectra_node_id)
-        subscription = self.client.create_subscription(200, handler=self)
-        subscription.subscribe_data_change(spectra)
-        subscription.subscribe_events()
+        # Getting variable node
+        myvar = self.client.get_node(self.treated_spectra_node_id)
 
-    def collect_raw_spectra(self):
-        """Collecting raw IR spectra from OPC UA server. This creates a client subscription to the raw spectra node, updating raw_spectra_queue with real time spectra."""
+        # subscribing to a variable node
+        params = ua.CreateSubscriptionParameters(
+            RequestedPublishingInterval=100,
+            RequestedLifetimeCount=81000,
+            RequestedMaxKeepAliveCount=27000
+        )
+        sub = await self.client.create_subscription(params, self)
+        await sub.subscribe_data_change(myvar)
+
+    async def collect_raw_spectra(self):
+        """Collecting real time raw IR spectra from OPC UA server via a subscription."""
 
         # Connecting to client if required
         if not self.connected_client_bool:
-            self.connect()
+            await self.connect()
 
-        spectra = self.client.get_node(self.raw_spectra_node_id)
-        subscription = self.client.create_subscription(200, handler=self)
-        subscription.subscribe_data_change(spectra)
-        subscription.subscribe_events()
-    
-    def get_current_sampling_interval(self):
+        # Getting variable node
+        myvar = self.client.get_node(self.raw_spectra_node_id)
+
+        # subscribing to a variable node
+        params = ua.CreateSubscriptionParameters(
+            RequestedPublishingInterval=100,
+            RequestedLifetimeCount=81000,
+            RequestedMaxKeepAliveCount=27000
+        )
+        sub = await self.client.create_subscription(params, self)
+        await sub.subscribe_data_change(myvar)
+
+    async def call_method(self, parent_node_id, method_node_id, *method_inputs):
+        """Calls the required method from server."""
+
+        # Method needs to be called from methods object node.
+        method_object_node = self.client.get_node(parent_node_id)
+        method_node_id = self.client.get_node(method_node_id).nodeid
+
+        # Calling method
+        await method_object_node.call_method(method_node_id, *method_inputs)
+
+    async def get_current_sampling_interval(self):
         """Returns current sampling interval (seconds) from OPC UA server."""
 
         # Connecting to client if required
         if not self.connected_client_bool:
-            self.connect()
+            await self.client.connect()
 
         # Getting node value
-        opc_value = self.client.get_node(self.current_sampling_interval_node_id).get_value()
+        opc_value = await self.client.get_node(self.current_sampling_interval_node_id).read_value()
         return opc_value
-    
-    def pause_experiment(self):
+
+    async def pause_experiment(self):
         """Pauses current icIR experiment with OPC UA server."""
 
         # Connecting to client if required
         if not self.connected_client_bool:
-            self.connect()
-            
-        # Method must be called from OPC methods object node
-        methods_object_node = self.client.get_node(self.methods_object_id)
-        
-        # The OPC method to be called
-        method = self.client.get_node(self.pause_node_id)
-        methods_object_node.call_method(method)        
+            await self.client.connect()
 
-    def stop_experiment(self):
+        if self.experiment_running:
+
+            # Calling method from server
+            await self.call_method(self.methods_objects_node_id, self.pause_experiment_node_id)
+            self.experiment_paused = True
+
+    async def stop_experiment(self):
         """Stops the current experiment (IR aquisition) with OPC UA server."""
 
         # Connecting to client if required
         if not self.connected_client_bool:
-            self.connect()
-        
-        # Method must be called from OPC methods object node
-        methods_object_node = self.client.get_node(self.methods_object_id)
-        
-        # The OPC method to be called
-        method = self.client.get_node(self.stop_node_id)
-        methods_object_node.call_method(method)
+            await self.client.connect()
 
-        self.disconnect()
-        
-        self.experiment_running = False
+        if self.experiment_running:
 
-    def resume_experiment(self):
+            # Calling method from server
+            await self.call_method(self.methods_objects_node_id, self.stop_experiment_node_id)
+
+            await self.disconnect()
+
+            self.experiment_running = False
+            self.experiment_paused = False
+
+    async def resume_experiment(self):
         """Resumes the current experiment with OPC UA server."""
 
         # Connecting to client if required
         if not self.connected_client_bool:
-            self.connect()
+            await self.client.connect()
 
-        # Method must be called from methods object node
-        methods_object_node = self.client.get_node(self.methods_object_id)
-        
-        # The method to be called
-        method = self.client.get_node(self.resume_node_id)
-        methods_object_node.call_method(method)
+        if self.experiment_running and self.experiment_paused:
 
-    def set_sampling_interval(self, sampling_interval:int):
+            # Calling method from server
+            await self.call_method(self.methods_objects_node_id, self.resume_experiment_node_id)
+            self.experiment_paused = False
+
+    async def set_sampling_interval(self, sampling_interval:int):
         """Changes the spectra sampling interval (seconds) via OPC UA."""
 
-        # Checking if sample interval is not smaller than 15 sec and not larger than 3600 sec (1 hour). Anything out of this range will result in a iCIR software error.
+        # Checking if sample interval is in an appropiate range (seconds).
+        # Anything out of this range will result in a iCIR software error.
         if sampling_interval>3600 or sampling_interval<15:
             raise ValueError(f'Sampling_interval {sampling_interval} is not in range 15-3600 sec.')
-        
+
         self.sampling_interval = sampling_interval
- 
+
         # Connecting to client if required
         if not self.connected_client_bool:
-            self.connect()
+            await self.client.connect()
 
-        # Method must be called from OPC methods object node
-        methods_object_node = self.client.get_node(self.methods_object_id)
-        
-        # The OPC method to be called
-        method = self.client.get_node(self.set_sampling_interval_node_id)
-        methods_object_node.call_method(method, sampling_interval)
+        # Calling method from server
+        await self.call_method(self.methods_objects_node_id,
+                               self.set_sampling_interval_node_id,
+                               sampling_interval)
 
-    def start_experiment(self, experiment_name:str, template_name:str, collect_background=False):
+    async def start_experiment(self, experiment_name:str,
+                               template_name:str, collect_background=False):
         """Starts experiment (IR aquisition) on OPC UA server.
         experiment_name: the name of the experiment, accepts path like string.
-        template_name: name of template to use stored in C:\ProgramData\METTLER TOLEDO\iC OPC UA Server\1.2\Templates
-        ***Note, if file names are inappropiate, icIR does not throw an error. It just fails to start the experiment."""
+        template_name: template name stored in 
+        C:/ProgramData/METTLER TOLEDO/iC OPC UA Server/1.2/Templates
+        ***icIR does not throw errors for wrong case use in naming. 
+        It just fails to start the experiment.   
+        """
 
         # Connecting to client if required
         if not self.connected_client_bool:
-            self.connect()
+            await self.client.connect()
 
-        # Method must be called from OPC methods object node
-        methods_object_node = self.client.get_node(self.methods_object_id)
-        method = self.client.get_node(self.start_experiment_node_id)
-        methods_object_node.call_method(method, experiment_name, template_name, collect_background)
-        self.experiment_running = True
+        if not self.experiment_running:
 
-    def connect(self):
+            # Calling method from server
+            await self.call_method(self.methods_objects_node_id,
+                                   self.start_experiment_node_id,
+                                   experiment_name,
+                                   template_name,
+                                   collect_background)
+            self.experiment_running = True
+
+    async def connect(self):
         """Connects to opc server."""
         if not self.connected_client_bool:
             print('Connecting IR')
-            self.client.connect()
+            await self.client.connect()
             self.connected_client_bool = True
 
-    def disconnect(self):
+    async def disconnect(self):
         """Disconnects from opc server."""
         if self.connected_client_bool:
             print('Disconnecting IR')
-            self.client.disconnect()
+            await self.client.disconnect()
             self.connected_client_bool = False
 
-    def shutdown(self):
+    async def shutdown(self):
         """Shutting down IR machine involves disconnecting from server."""
 
         # Making sure the experiment running has been stopped.
         if self.experiment_running:
-            self.stop_experiment()
+            await self.stop_experiment()
 
         else:
-            self.disconnect()
-
-if __name__ == "__main__":
-
-    #Example use
-    tcp_path = 'opc.tcp://localhost:62552/iCOpcUaServer'
-    ReactPyR1 = ReactPyR(opc_server_path=tcp_path)
-    
-    spectra_path = 'Digital Discovery Project\\test1'
-    template_name = 'DigitalDiscoveryProject'
-    ReactPyR1.start_experiment(spectra_path, template_name)
-    time.sleep(15)
-    ReactPyR1.stop_experiment()
-
-    ReactPyR1.shutdown()
+            await self.disconnect()
