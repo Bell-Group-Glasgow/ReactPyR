@@ -1,6 +1,5 @@
 """The module focuses on controlling an IR machine via its OPC UA server."""
 
-import asyncio
 import os
 from asyncio import Queue
 from asyncua import Client, ua
