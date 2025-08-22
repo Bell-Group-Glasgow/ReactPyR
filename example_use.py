@@ -26,6 +26,10 @@ if __name__ == "__main__":
         # Starting an experiment.
         spectra_path = 'Digital Discovery Project\\asyncTest10'
         template_name = 'DigitalDiscoveryProject'
+<<<<<<< HEAD
+=======
+        spectra_path = 'Digital Discovery Project\\asyncua_test10'
+>>>>>>> nodeid_method
         await ir_machine.start_experiment(spectra_path, template_name, False)
         await sleep(20)
         # await ir_machine.pause_experiment()
@@ -38,13 +42,20 @@ if __name__ == "__main__":
         # await sleep(20)
         # await ir_machine.stop_experiment()
 
+<<<<<<< HEAD
         # # Retrieving the intensities of previous background spectra.
         # print("Retrieving last background spectra...")
         # background = await ir_machine.get_last_background_spectra()
         # print(background)
+=======
+        # Retrieving the intensities of previous background spectra.
+        background = await ir_machine.get_last_background_spectra()
+>>>>>>> nodeid_method
 
         # # Collecting all the raw and processed IR spectra.
         await ir_machine.collect_raw_spectra()
+        await asyncio.sleep(120)
+
         await ir_machine.collect_treated_spectra()
 
         # # Changing sampling interval to 20 seconds.
