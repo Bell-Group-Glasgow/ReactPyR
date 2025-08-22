@@ -40,7 +40,7 @@ This project was developed and tested using Windows 10 and on a ReactIR15 system
 
 Node IDs were obtained using iC OPC UA. 
 
-![OPCUA](ReactPyR/images/OPCUA.PNG)
+![OPCUA](images/OPCUA.PNG)
 
 ## Example Use
 ```Python
