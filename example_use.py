@@ -20,32 +20,19 @@ if __name__ == "__main__":
         """The main event loop demonstrating basic function calls."""
 
         # Making the object.
-        tcp_path = 'opc.tcp://localhost:62552/iCOpcUaServer'
+        tcp_path = "opc.tcp://localhost:62552/iCOpcUaServer"
         ir_machine = ReactPyR(opc_server_path=tcp_path)
 
         # Starting an experiment.
-        spectra_path = 'Digital Discovery Project\\asyncTest10'
-        template_name = 'DigitalDiscoveryProject'
-        spectra_path = 'Digital Discovery Project\\asyncua_test10'
+        spectra_path = "Digital Discovery Project\\asyncTest10"
+        template_name = "DigitalDiscoveryProject"
+        spectra_path = "Digital Discovery Project\\asyncua_test10"
         await ir_machine.start_experiment(spectra_path, template_name, False)
 
         # Retrieving the intensities of previous background spectra.
         background = await ir_machine.get_last_background_spectra()
         await sleep(20)
-        # await ir_machine.pause_experiment()
-        # await ir_machine.get_current_sampling_interval()
-        # await sleep(10)
-        # await ir_machine.set_sampling_interval(60)
-        # await sleep(15)
-        # await ir_machine.resume_experiment()
-        # await ir_machine.get_current_sampling_interval()
-        # await sleep(20)
-        # await ir_machine.stop_experiment()
-
-        # # Retrieving the intensities of previous background spectra.
-        # print("Retrieving last background spectra...")
-        # background = await ir_machine.get_last_background_spectra()
-        # print(background)
+        print(background)
 
         # # Collecting all the raw and processed IR spectra.
         await ir_machine.collect_raw_spectra()
@@ -58,7 +45,7 @@ if __name__ == "__main__":
         await ir_machine.set_sampling_interval(new_sampling_interval)
         current_sampling_interval = await ir_machine.get_current_sampling_interval()
         if new_sampling_interval == current_sampling_interval:
-            print('Sampling interval changed successfully.')
+            print("Sampling interval changed successfully.")
 
         # # Pausing experiment for 20 seconds then resuming for another 20.
         await ir_machine.pause_experiment()
